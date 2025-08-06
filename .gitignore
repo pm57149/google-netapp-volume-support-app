@@ -98,3 +98,5 @@ logs
 # Temporary folders
 tmp/
 temp/
+**/metrics_data/
+dev.env
