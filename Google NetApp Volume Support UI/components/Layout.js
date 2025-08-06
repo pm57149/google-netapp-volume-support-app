@@ -1,4 +1,4 @@
-import { Layout, Menu, Avatar, Badge, Input, Space, Typography, Tree, Divider, FloatButton, Drawer, Card, Button } from 'antd';
+import { Layout, Menu, Avatar, Badge, Input, Space, Typography, Tree, Divider, FloatButton, Drawer, Card, Button, Spin, message } from 'antd';
 import { 
   MenuFoldOutlined, 
   MenuUnfoldOutlined, 
@@ -12,29 +12,155 @@ import {
   DownOutlined,
   MessageOutlined,
   SendOutlined,
-  RobotOutlined
+  RobotOutlined,
+  InfoCircleOutlined,
+  ReloadOutlined,
+  LoadingOutlined,
+  SecurityScanOutlined,
+  FileProtectOutlined
 } from '@ant-design/icons';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 
 const { Header, Sider, Content } = Layout;
 const { Title } = Typography;
 
-const AppLayout = ({ children }) => {
-  const [collapsed, setCollapsed] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState([
-    {
-      id: 1,
-      type: 'bot',
-      message: 'Hello! I\'m your NetApp Storage Assistant. How can I help you today?',
-      timestamp: new Date()
+// API function to fetch pools for sidebar
+const fetchPoolsForSidebar = async () => {
+  try {
+    const response = await fetch('/api/pools');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
-  ]);
-  const [currentMessage, setCurrentMessage] = useState('');
-  const router = useRouter();
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Error fetching pools for sidebar:', error);
+    throw error;
+  }
+};
 
-  const treeData = [
+// API function to fetch volumes for sidebar
+const fetchVolumesForSidebar = async () => {
+  try {
+    const response = await fetch('/api/volumes');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Error fetching volumes for sidebar:', error);
+    throw error;
+  }
+};
+
+// Transform API data to sidebar tree structure
+const transformPoolsToSidebarTree = (poolsData, volumesData, router) => {
+  console.log('Sidebar - Raw pools API response:', poolsData); // Debug log
+  console.log('Sidebar - Raw volumes API response:', volumesData); // Debug log
+  
+  // Handle different possible API response structures for pools
+  let pools = [];
+  
+  if (poolsData?.pools) {
+    pools = poolsData.pools;
+  } else if (poolsData?.capacityPools) {
+    pools = poolsData.capacityPools;
+  } else if (Array.isArray(poolsData)) {
+    pools = poolsData;
+  } else if (poolsData?.items) {
+    pools = poolsData.items;
+  } else {
+    console.warn('Sidebar - Unknown pools API response structure:', poolsData);
+    pools = [];
+  }
+
+  // Handle different possible API response structures for volumes
+  let volumes = [];
+  
+  if (volumesData?.volumes) {
+    volumes = volumesData.volumes;
+  } else if (Array.isArray(volumesData)) {
+    volumes = volumesData;
+  } else if (volumesData?.items) {
+    volumes = volumesData.items;
+  } else {
+    console.warn('Sidebar - Unknown volumes API response structure:', volumesData);
+    volumes = [];
+  }
+
+  console.log('Sidebar - Extracted pools:', pools); // Debug log
+  console.log('Sidebar - Extracted volumes:', volumes); // Debug log
+
+  return pools.map((pool, index) => {
+    // Extract pool name from different possible fields, prioritizing resourceId
+    const poolName = pool.resourceId || 
+                    pool.name || 
+                    pool.displayName || 
+                    pool.poolName || 
+                    pool.capacityPoolName ||
+                    pool.poolId ||
+                    pool.id?.split('/').pop() ||
+                    `Pool-${index + 1}`;
+
+    // Find volumes that belong to this pool
+    const poolVolumes = volumes.filter(volume => {
+      const volumePoolId = volume.poolId || volume.pool || volume.capacityPoolId;
+      const poolId = pool.resourceId || pool.name || pool.poolId || pool.id;
+      
+      return volumePoolId === poolId || 
+             volumePoolId === poolName ||
+             volume.poolName === poolName;
+    });
+
+    console.log(`Sidebar - Pool ${poolName} has ${poolVolumes.length} volumes:`, poolVolumes); // Debug log
+
+    return {
+      title: (
+        <span style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between', width: '100%' }}>
+          <span style={{ cursor: 'pointer' }}>{poolName}</span>
+          <InfoCircleOutlined 
+            style={{ 
+              color: '#1890ff', 
+              fontSize: '12px',
+              cursor: 'pointer',
+              padding: '2px'
+            }} 
+            title="Pool details"
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push(`/pool/${encodeURIComponent(poolName)}`);
+            }}
+          />
+        </span>
+      ),
+      key: pool.resourceId || pool.name || pool.id || `pool-${index + 1}`,
+      children: [
+        {
+          title: 'Volumes',
+          key: `${poolName}-volumes`,
+          children: poolVolumes.length > 0 ? 
+            poolVolumes.map((volume, volIndex) => ({
+              title: volume.name || volume.displayName || volume.resourceId || `volume-${volIndex + 1}`,
+              key: `${poolName}-volume-${volume.resourceId || volume.name || volIndex + 1}`,
+              isLeaf: true,
+            })) : [
+              {
+                title: 'No volumes available',
+                key: `${poolName}-no-volumes`,
+                isLeaf: true,
+                disabled: true,
+              },
+            ],
+        },
+      ],
+    };
+  });
+};
+
+// Fallback tree data
+const fallbackTreeData = [
     {
       title: 'Pool-01',
       key: 'pool-01',
@@ -56,38 +182,6 @@ const AppLayout = ({ children }) => {
             {
               title: 'volume-03',
               key: 'pool-01-volume-03',
-              isLeaf: true,
-            },
-          ],
-        },
-        {
-          title: 'Aggregates',
-          key: 'pool-01-aggregates',
-          children: [
-            {
-              title: 'aggr-01',
-              key: 'pool-01-aggr-01',
-              isLeaf: true,
-            },
-            {
-              title: 'aggr-02',
-              key: 'pool-01-aggr-02',
-              isLeaf: true,
-            },
-          ],
-        },
-        {
-          title: 'Storage VMs',
-          key: 'pool-01-svms',
-          children: [
-            {
-              title: 'svm-01',
-              key: 'pool-01-svm-01',
-              isLeaf: true,
-            },
-            {
-              title: 'svm-02',
-              key: 'pool-01-svm-02',
               isLeaf: true,
             },
           ],
@@ -114,28 +208,6 @@ const AppLayout = ({ children }) => {
             },
           ],
         },
-        {
-          title: 'Aggregates',
-          key: 'pool-02-aggregates',
-          children: [
-            {
-              title: 'aggr-03',
-              key: 'pool-02-aggr-03',
-              isLeaf: true,
-            },
-          ],
-        },
-        {
-          title: 'Storage VMs',
-          key: 'pool-02-svms',
-          children: [
-            {
-              title: 'svm-03',
-              key: 'pool-02-svm-03',
-              isLeaf: true,
-            },
-          ],
-        },
       ],
     },
     {
@@ -153,41 +225,80 @@ const AppLayout = ({ children }) => {
             },
           ],
         },
-        {
-          title: 'Aggregates',
-          key: 'pool-03-aggregates',
-          children: [
-            {
-              title: 'aggr-04',
-              key: 'pool-03-aggr-04',
-              isLeaf: true,
-            },
-            {
-              title: 'aggr-05',
-              key: 'pool-03-aggr-05',
-              isLeaf: true,
-            },
-          ],
-        },
-        {
-          title: 'Storage VMs',
-          key: 'pool-03-svms',
-          children: [
-            {
-              title: 'svm-04',
-              key: 'pool-03-svm-04',
-              isLeaf: true,
-            },
-            {
-              title: 'svm-05',
-              key: 'pool-03-svm-05',
-              isLeaf: true,
-            },
-          ],
-        },
       ],
     },
   ];
+
+const AppLayout = ({ children }) => {
+  const [collapsed, setCollapsed] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([
+    {
+      id: 1,
+      type: 'bot',
+      message: 'Hello! I\'m your NetApp Storage Assistant. How can I help you today?',
+      timestamp: new Date()
+    }
+  ]);
+  const [currentMessage, setCurrentMessage] = useState('');
+  const [treeData, setTreeData] = useState([]);
+  const [treeLoading, setTreeLoading] = useState(true);
+  const [treeError, setTreeError] = useState(null);
+  const [showAllPools, setShowAllPools] = useState(false);
+  const router = useRouter();
+
+  // Load pools data for sidebar tree
+  const loadSidebarPools = async () => {
+    try {
+      setTreeLoading(true);
+      setTreeError(null);
+      console.log('Sidebar - Fetching pools and volumes from API...');
+      
+      // Fetch both pools and volumes data in parallel
+      const [poolsData, volumesData] = await Promise.all([
+        fetchPoolsForSidebar(),
+        fetchVolumesForSidebar()
+      ]);
+      
+      console.log('Sidebar - Pools API Response received:', poolsData);
+      console.log('Sidebar - Volumes API Response received:', volumesData);
+      
+      const transformedData = transformPoolsToSidebarTree(poolsData, volumesData, router);
+      console.log('Sidebar - Transformed data:', transformedData);
+      
+      if (transformedData.length > 0) {
+        setTreeData(transformedData);
+        console.log(`Sidebar - Successfully loaded ${transformedData.length} pools from API`);
+      } else {
+        // API returned successfully but no pools found, use fallback
+        console.log('Sidebar - No pools found in API response, using fallback data');
+        const fallbackPools = fallbackTreeData.map((item, index) => ({
+          name: item.title,
+          key: item.key,
+        }));
+        const transformedFallbackData = transformPoolsToSidebarTree({ pools: fallbackPools }, {}, router);
+        setTreeData(transformedFallbackData.length > 0 ? transformedFallbackData : fallbackTreeData);
+      }
+    } catch (err) {
+      console.error('Sidebar - Failed to load pools and volumes:', err);
+      setTreeError(err.message);
+      
+      // Use fallback data if API fails
+      console.log('Sidebar - API failed, using fallback data');
+      const fallbackPools = fallbackTreeData.map((item, index) => ({
+        name: item.title,
+        key: item.key,
+      }));
+      const transformedFallbackData = transformPoolsToSidebarTree({ pools: fallbackPools }, {}, router);
+      setTreeData(transformedFallbackData.length > 0 ? transformedFallbackData : fallbackTreeData);
+    } finally {
+      setTreeLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSidebarPools();
+  }, []);
 
   const handleMenuClick = (e) => {
     switch(e.key) {
@@ -200,6 +311,33 @@ const AppLayout = ({ children }) => {
       case '3':
         router.push('/settings');
         break;
+      case '4':
+        // Data Protection submenu - handle in submenu items
+        break;
+      case '4-1':
+        router.push('/data-protection/backups');
+        break;
+      case '4-2':
+        router.push('/data-protection/backup-vaults');
+        break;
+      case '4-3':
+        router.push('/data-protection/migrations');
+        break;
+      case '4-4':
+        router.push('/data-protection/active-directory');
+        break;
+      case '5':
+        // Policies submenu - handle in submenu items
+        break;
+      case '5-1':
+        router.push('/policies');
+        break;
+      case '5-2':
+        router.push('/policies/cmek');
+        break;
+      case '5-3':
+        router.push('/policies/backup');
+        break;
       default:
         break;
     }
@@ -208,16 +346,43 @@ const AppLayout = ({ children }) => {
   const handleTreeSelect = (selectedKeys, info) => {
     console.log('Tree selected:', selectedKeys, info);
     
+    // Handle pool selection (parent nodes)
+    if (!info.node.isLeaf && selectedKeys.length > 0) {
+      const key = selectedKeys[0];
+      
+      // Check if this is a "Volumes" category click
+      if (key.includes('-volumes')) {
+        // Extract pool name from the key
+        const poolName = key.replace('-volumes', '');
+        console.log('Navigating to volumes for pool:', poolName);
+        router.push(`/volumes?poolId=${encodeURIComponent(poolName)}`);
+        return;
+      }
+      
+      // Extract pool name from the key (pool nodes don't have isLeaf property)
+      if (!key.includes('-volumes') && !key.includes('-aggregates') && !key.includes('-svms')) {
+        // This is a pool node, navigate to pool details
+        const poolName = info.node.title?.props?.children?.[0]?.props?.children || 
+                         info.node.title?.props?.children || 
+                         key;
+        
+        if (typeof poolName === 'string') {
+          router.push(`/pool/${encodeURIComponent(poolName)}`);
+          return;
+        }
+      }
+    }
+    
     // Only navigate for leaf nodes (actual items like volumes, aggregates, svms)
     if (info.node.isLeaf && selectedKeys.length > 0) {
       const key = selectedKeys[0];
       
       // Navigate to specific detail pages based on the type
-      if (key.includes('volume')) {
+      if (key.includes('volume') && !key.includes('no-volumes')) {
         router.push(`/volume/${key}`);
-      } else if (key.includes('aggr')) {
+      } else if (key.includes('aggr') && !key.includes('no-aggregates')) {
         router.push(`/aggregate/${key}`);
-      } else if (key.includes('svm')) {
+      } else if (key.includes('svm') && !key.includes('no-svms')) {
         router.push(`/svm/${key}`);
       }
     }
@@ -278,28 +443,87 @@ const AppLayout = ({ children }) => {
         return ['2'];
       case '/settings':
         return ['3'];
+      case '/data-protection/backups':
+        return ['4-1'];
+      case '/data-protection/backup-vaults':
+        return ['4-2'];
+      case '/data-protection/migrations':
+        return ['4-3'];
+      case '/data-protection/active-directory':
+        return ['4-4'];
+      case '/policies':
+        return ['5-1'];
+      case '/policies/cmek':
+        return ['5-2'];
+      case '/policies/backup':
+        return ['5-3'];
       default:
         return ['1'];
     }
   };
 
-  const menuItems = [
+  const topMenuItems = [
     {
       key: '1',
       icon: <DashboardOutlined />,
       label: 'Dashboard',
     },
+  ];
+
+  const bottomMenuItems = [
     {
-      key: '2',
-      icon: <UserOutlined />,
-      label: 'Users',
+      key: '4',
+      icon: <SecurityScanOutlined />,
+      label: 'Data Protection',
+      children: [
+        {
+          key: '4-1',
+          label: 'Backups',
+        },
+        {
+          key: '4-2',
+          label: 'Backup Vaults',
+        },
+        {
+          key: '4-3',
+          label: 'Migrations',
+        },
+        {
+          key: '4-4',
+          label: 'Active Directory',
+        },
+      ],
     },
     {
-      key: '3',
-      icon: <SettingOutlined />,
-      label: 'Settings',
+      key: '5',
+      icon: <FileProtectOutlined />,
+      label: 'Policies',
+      children: [
+        {
+          key: '5-1',
+          label: 'Policies',
+        },
+        {
+          key: '5-2',
+          label: 'CMEK Policies',
+        },
+        {
+          key: '5-3',
+          label: 'Backup Policies',
+        },
+      ],
     },
   ];
+
+  // Get limited tree data based on showAllPools state
+  const getDisplayTreeData = () => {
+    if (showAllPools || treeData.length <= 5) {
+      return treeData;
+    }
+    return treeData.slice(0, 5);
+  };
+
+  const hiddenPoolsCount = treeData.length > 5 ? treeData.length - 5 : 0;
 
   return (
     <Layout style={{ minHeight: '100vh', background: '#fafbfc' }}>
@@ -308,7 +532,7 @@ const AppLayout = ({ children }) => {
         collapsible 
         collapsed={collapsed} 
         theme="light"
-        width={280}
+        width={320}
         style={{ 
           overflow: 'auto', 
           height: '100vh', 
@@ -329,47 +553,36 @@ const AppLayout = ({ children }) => {
           background: '#fff'
         }}>
           {!collapsed && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{
-                width: 32,
-                height: 32,
-                background: 'linear-gradient(135deg, #4285f4, #34a853)',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontWeight: 'bold',
-                fontSize: '14px'
-              }}>
-                N
-              </div>
-              <Title level={4} style={{ margin: 0, color: '#3c4043', fontWeight: 500 }}>NetApp Console</Title>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <img 
+                src="/netapp-logo.svg" 
+                alt="NetApp Logo" 
+                style={{ 
+                  height: 32,
+                  width: 'auto'
+                }}
+              />
+              <Title level={4} style={{ margin: 0, color: '#3c4043', fontWeight: 500 }}>Console</Title>
             </div>
           )}
           {collapsed && (
-            <div style={{
-              width: 32,
-              height: 32,
-              background: 'linear-gradient(135deg, #4285f4, #34a853)',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white',
-              fontWeight: 'bold',
-              fontSize: '14px'
-            }}>
-              N
-            </div>
+            <img 
+              src="/netapp-logo.svg" 
+              alt="NetApp Logo" 
+              style={{ 
+                height: 24,
+                width: 'auto'
+              }}
+            />
           )}
         </div>
         
+        {/* Top Menu - Dashboard */}
         <Menu
           theme="light"
           mode="inline"
           selectedKeys={getSelectedKey()}
-          items={menuItems}
+          items={topMenuItems}
           onClick={handleMenuClick}
           style={{ 
             borderRight: 0, 
@@ -381,31 +594,116 @@ const AppLayout = ({ children }) => {
         
         {!collapsed && (
           <>
-            <Divider style={{ margin: '0 16px 16px 16px', borderColor: '#e8eaed' }}>
-              <span style={{ fontSize: '12px', color: '#5f6368', fontWeight: 500 }}>Storage Pools</span>
-            </Divider>
+            <div style={{ margin: '0 16px 8px 16px' }}>
+              <Divider style={{ margin: 0, borderColor: '#e8eaed' }}>
+                <span style={{ fontSize: '12px', color: '#5f6368', fontWeight: 500 }}>
+                  Storage Pools {treeError && <span style={{ color: '#ff4d4f' }}>(API Error)</span>}
+                </span>
+              </Divider>
+            </div>
             
             <div style={{ padding: '0 16px' }}>
-              <Tree
-                showLine
-                switcherIcon={<DownOutlined />}
-                defaultExpandedKeys={['pool-01']}
-                onSelect={handleTreeSelect}
-                treeData={treeData}
-                style={{
+              {treeLoading ? (
+                <div style={{ 
                   background: '#f8f9fa',
-                  padding: '12px',
+                  padding: '20px',
                   borderRadius: '8px',
                   border: '1px solid #e8eaed',
-                  fontSize: '13px'
-                }}
-                className="google-cloud-tree"
-              />
+                  textAlign: 'center'
+                }}>
+                  <Spin 
+                    indicator={<LoadingOutlined style={{ fontSize: 16 }} spin />} 
+                    tip="Loading..."
+                  />
+                </div>
+              ) : (
+                <>
+                  <Tree
+                    showLine
+                    switcherIcon={<DownOutlined />}
+                    defaultExpandedKeys={getDisplayTreeData().length > 0 ? [getDisplayTreeData()[0]?.key] : []}
+                    onSelect={handleTreeSelect}
+                    treeData={getDisplayTreeData()}
+                    style={{
+                      background: '#f8f9fa',
+                      padding: '12px',
+                      borderRadius: showAllPools || hiddenPoolsCount === 0 ? '8px' : '8px 8px 0 0',
+                      border: '1px solid #e8eaed',
+                      fontSize: '13px',
+                      borderBottom: hiddenPoolsCount > 0 && !showAllPools ? 'none' : '1px solid #e8eaed'
+                    }}
+                    className="google-cloud-tree"
+                  />
+                  {hiddenPoolsCount > 0 && !showAllPools && (
+                    <div style={{ 
+                      padding: '8px 12px',
+                      textAlign: 'center',
+                      background: '#f8f9fa',
+                      borderRadius: '0 0 8px 8px',
+                      border: '1px solid #e8eaed',
+                      borderTop: 'none'
+                    }}>
+                      <Button 
+                        type="link" 
+                        size="small"
+                        onClick={() => setShowAllPools(true)}
+                        style={{ 
+                          fontSize: '12px',
+                          color: '#1a73e8',
+                          padding: '0',
+                          height: 'auto'
+                        }}
+                      >
+                        Show {hiddenPoolsCount} more pool{hiddenPoolsCount > 1 ? 's' : ''}
+                      </Button>
+                    </div>
+                  )}
+                  {showAllPools && treeData.length > 5 && (
+                    <div style={{ 
+                      padding: '8px 12px',
+                      textAlign: 'center',
+                      background: '#f8f9fa',
+                      borderRadius: '0 0 8px 8px',
+                      border: '1px solid #e8eaed',
+                      borderTop: 'none'
+                    }}>
+                      <Button 
+                        type="link" 
+                        size="small"
+                        onClick={() => setShowAllPools(false)}
+                        style={{ 
+                          fontSize: '12px',
+                          color: '#1a73e8',
+                          padding: '0',
+                          height: 'auto'
+                        }}
+                      >
+                        Show less
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
+            
+            {/* Bottom Menu - Data Protection and Policies */}
+            <Menu
+              theme="light"
+              mode="inline"
+              selectedKeys={getSelectedKey()}
+              items={bottomMenuItems}
+              onClick={handleMenuClick}
+              style={{ 
+                borderRight: 0, 
+                marginTop: 16,
+                background: 'transparent'
+              }}
+              className="google-cloud-menu"
+            />
           </>
         )}
       </Sider>
-      <Layout style={{ marginLeft: collapsed ? 80 : 280 }}>
+      <Layout style={{ marginLeft: collapsed ? 80 : 320 }}>
         <Header style={{ 
           padding: '0 24px', 
           background: '#fff', 
@@ -416,7 +714,7 @@ const AppLayout = ({ children }) => {
           position: 'fixed',
           top: 0,
           right: 0,
-          left: collapsed ? 80 : 280,
+          left: collapsed ? 80 : 320,
           zIndex: 1000,
           boxShadow: '0 1px 2px 0 rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15)'
         }}>
@@ -578,4 +876,4 @@ const AppLayout = ({ children }) => {
   );
 };
 
-export default AppLayout; 
+export default AppLayout;

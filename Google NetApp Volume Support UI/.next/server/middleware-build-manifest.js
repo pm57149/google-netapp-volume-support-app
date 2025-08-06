@@ -25,10 +25,10 @@ globalThis.__BUILD_MANIFEST = {
       "static/chunks/main.js",
       "static/chunks/pages/_error.js"
     ],
-    "/volume/[volumeId]": [
+    "/pool/[poolId]": [
       "static/chunks/webpack.js",
       "static/chunks/main.js",
-      "static/chunks/pages/volume/[volumeId].js"
+      "static/chunks/pages/pool/[poolId].js"
     ]
   },
   "ampFirstPages": []
