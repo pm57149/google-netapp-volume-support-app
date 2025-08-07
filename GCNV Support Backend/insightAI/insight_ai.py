@@ -1,3 +1,5 @@
+import json
+
 import psycopg2
 import openai
 from openai import OpenAI
@@ -11,12 +13,12 @@ os.environ['SSL_CERT_FILE']      = pem_path
 OPENAPI_KEY = os.getenv('OPENAI_API_KEY')
 OPENAPI_USER = os.getenv('OPENAI_API_USER')
 
-def load_your_key():
-    return "sk_24cdd0091e36ff8621df8492d7290a2136389e09ad92bfd05aaeec64638e9631"
-
-def detect_user():
-    return "ac84652"
-
+resp_json = {
+    "performance": "",      # Fill with performance insights
+    "bottlenecks": "",      # Fill with identified bottlenecks
+    "recommendations": "",  # Fill with actionable recommendations
+    "usage_trends": ""      # Fill with usage trends
+}
 
 # noinspection PyTypeChecker
 def agentic_decision(prompt):
@@ -64,9 +66,13 @@ def find_insight(metrics_data_path):
         "Don't suggest any feature changes or upgrades. "
         "Don't suggest any software changes or upgrades."
         "Don't use Best regards and similar phrases. Keep the response professional and focused on the customer's needs."
-        "Don't use backups instead of snapshots. "
+        "Don't use backups or data protection terms for snapshots. "
         "Use the volume & pool name wherever possible to support your analysis, but do not include the raw data in the response."
+        f"transform the response into a JSON format with keys: {', '.join(resp_json.keys())}."
+        "The response should only contain the JSON object without any additional text or newlines. Don't use escape characters."
     )
+
+    customer_friendly_response = json.loads(customer_friendly_response)
 
     # print("Customer-friendly response:\n", customer_friendly_response)
 

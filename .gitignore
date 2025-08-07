@@ -100,3 +100,5 @@ tmp/
 temp/
 **/metrics_data/
 dev.env
+
+**/__pycache__/
