@@ -2,8 +2,8 @@
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
+  "/": "pages/index.js",
   "/api/pools": "pages/api/pools.js",
   "/api/volumes": "pages/api/volumes.js",
-  "/": "pages/index.js",
   "/pool/[poolId]": "pages/pool/[poolId].js"
 }
