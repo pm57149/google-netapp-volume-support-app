@@ -1,0 +1,9 @@
+{
+  "response": {
+    "bottlenecks": "No performance bottlenecks were identified on vol1, vol2, or vol3 because there was no workload or traffic present.",
+    "performance": "During the monitoring period of approximately 20 hours, the volumes vol1, vol2, and vol3 did not show any activity. There were no data transfers or access operations on these volumes, and overall performance remained idle.",
+    "recommendations": "If you expect vol1, vol2, or vol3 to be in use, please check applications or systems that should be accessing them to ensure they are connected and active. Confirm these volumes are properly assigned to the intended systems and adjust retention settings on vol3 if needed. For volumes that are no longer required, consider removing or reassigning them to make the most effective use of your storage resources.",
+    "usage_trends": "No usage trends were observed for vol1, vol2, or vol3 as they have not been accessed during the analysis window."
+  },
+  "status": "completed"
+}
