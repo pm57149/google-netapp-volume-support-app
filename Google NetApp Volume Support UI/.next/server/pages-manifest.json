@@ -2,8 +2,10 @@
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
-  "/": "pages/index.js",
-  "/api/pools": "pages/api/pools.js",
+  "/pool/[poolId]": "pages/pool/[poolId].js",
+  "/policies/cmek": "pages/policies/cmek.js",
+  "/volumes": "pages/volumes.js",
   "/api/volumes": "pages/api/volumes.js",
-  "/pool/[poolId]": "pages/pool/[poolId].js"
+  "/task-monitor": "pages/task-monitor.js",
+  "/api/pools": "pages/api/pools.js"
 }

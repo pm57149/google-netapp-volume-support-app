@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { Card, Table, Tag, Button, Spin, Alert, Row, Col, Statistic, Input, Space } from 'antd';
+import { Card, Table, Tag, Button, Spin, Alert, Row, Col, Statistic, Input, Space, message, Modal } from 'antd';
 import { 
   DatabaseOutlined, 
   HddOutlined, 
@@ -10,9 +10,11 @@ import {
   FilterOutlined,
   SecurityScanOutlined,
   KeyOutlined,
-  ThunderboltOutlined
+  ThunderboltOutlined,
+  BulbOutlined
 } from '@ant-design/icons';
 import AppLayout from '../components/Layout';
+import { findInsights, processInsightsData, getAllRecommendations } from '../utils/insights';
 
 const { Search } = Input;
 
@@ -24,6 +26,10 @@ export default function Volumes() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchText, setSearchText] = useState('');
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsData, setInsightsData] = useState(null);
+  const [insightsModalVisible, setInsightsModalVisible] = useState(false);
 
   // Fetch all volumes and filter by pool if needed
   const fetchVolumes = async () => {
@@ -87,6 +93,52 @@ export default function Volumes() {
       );
       setFilteredVolumes(filtered);
     }
+  };
+
+  // Handle insights generation
+  const handleGetInsights = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('Please select at least one volume to generate insights');
+      return;
+    }
+
+    try {
+      setInsightsLoading(true);
+      
+      // Get volume names from selected keys
+      const selectedVolumes = filteredVolumes.filter(vol => 
+        selectedRowKeys.includes(vol.resourceId)
+      );
+      const volumeNames = selectedVolumes.map(vol => vol.name || vol.resourceId);
+      
+      console.log('Getting insights for volumes:', volumeNames);
+      
+      const insights = await findInsights(volumeNames);
+      const processedInsights = processInsightsData(insights);
+      
+      setInsightsData(processedInsights);
+      setInsightsModalVisible(true);
+      
+      message.success(`Generated insights for ${volumeNames.length} volume(s)`);
+      
+    } catch (error) {
+      console.error('Error getting insights:', error);
+      message.error(`Failed to get insights: ${error.message}`);
+    } finally {
+      setInsightsLoading(false);
+    }
+  };
+
+  // Row selection configuration
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (selectedKeys) => {
+      setSelectedRowKeys(selectedKeys);
+    },
+    getCheckboxProps: (record) => ({
+      disabled: false,
+      name: record.resourceId,
+    }),
   };
 
   const volumeColumns = [
@@ -302,7 +354,22 @@ export default function Volumes() {
       </Card>
 
       {/* Volumes Table */}
-      <Card title="Volume Details">
+      <Card 
+        title="Volume Details"
+        extra={
+          <Space>
+            <Button 
+              type="primary"
+              icon={<BulbOutlined />}
+              loading={insightsLoading}
+              disabled={selectedRowKeys.length === 0}
+              onClick={handleGetInsights}
+            >
+              Get Insights ({selectedRowKeys.length} selected)
+            </Button>
+          </Space>
+        }
+      >
         <Table
           columns={volumeColumns}
           dataSource={filteredVolumes}
@@ -319,8 +386,139 @@ export default function Volumes() {
               poolId ? `No volumes found for pool: ${poolId}` : 'No volumes found'
           }}
           scroll={{ x: 1200 }}
+          rowSelection={rowSelection}
         />
       </Card>
+
+      {/* Insights Modal */}
+      <Modal
+        title={
+          <Space>
+            <BulbOutlined style={{ color: '#1890ff' }} />
+            Volume Insights
+          </Space>
+        }
+        visible={insightsModalVisible}
+        onCancel={() => setInsightsModalVisible(false)}
+        footer={null}
+        width={900}
+      >
+        {insightsLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
+            <Spin size="large" tip="Analyzing volumes and generating insights..." />
+          </div>
+        ) : (
+          <div>
+            {insightsData?.summary ? (
+              <>
+                {/* Summary Statistics */}
+                <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                  <Col span={6}>
+                    <Card>
+                      <Statistic
+                        title="Volumes Analyzed"
+                        value={insightsData.summary.totalVolumes}
+                        prefix={<DatabaseOutlined />}
+                      />
+                    </Card>
+                  </Col>
+                  <Col span={6}>
+                    <Card>
+                      <Statistic
+                        title="High Risk"
+                        value={insightsData.summary.riskDistribution.high}
+                        valueStyle={{ color: '#ff4d4f' }}
+                        prefix={<SecurityScanOutlined />}
+                      />
+                    </Card>
+                  </Col>
+                  <Col span={6}>
+                    <Card>
+                      <Statistic
+                        title="Avg Performance"
+                        value={Math.round(insightsData.summary.averagePerformanceScore)}
+                        suffix="/100"
+                        valueStyle={{ color: '#52c41a' }}
+                        prefix={<ThunderboltOutlined />}
+                      />
+                    </Card>
+                  </Col>
+                  <Col span={6}>
+                    <Card>
+                      <Statistic
+                        title="Recommendations"
+                        value={insightsData.summary.totalRecommendations}
+                        prefix={<BulbOutlined />}
+                      />
+                    </Card>
+                  </Col>
+                </Row>
+
+                {/* Risk Distribution */}
+                <Card title="Risk Assessment" style={{ marginBottom: 16 }}>
+                  <Row gutter={16}>
+                    <Col span={8}>
+                      <Tag color="red" style={{ width: '100%', textAlign: 'center', padding: '8px' }}>
+                        High Risk: {insightsData.summary.riskDistribution.high}
+                      </Tag>
+                    </Col>
+                    <Col span={8}>
+                      <Tag color="orange" style={{ width: '100%', textAlign: 'center', padding: '8px' }}>
+                        Medium Risk: {insightsData.summary.riskDistribution.medium}
+                      </Tag>
+                    </Col>
+                    <Col span={8}>
+                      <Tag color="green" style={{ width: '100%', textAlign: 'center', padding: '8px' }}>
+                        Low Risk: {insightsData.summary.riskDistribution.low}
+                      </Tag>
+                    </Col>
+                  </Row>
+                </Card>
+
+                {/* Recommendations */}
+                {getAllRecommendations(insightsData.raw).length > 0 && (
+                  <Card title="Recommendations" style={{ marginBottom: 16 }}>
+                    {getAllRecommendations(insightsData.raw).slice(0, 5).map((rec, index) => (
+                      <Alert
+                        key={index}
+                        message={rec.description}
+                        description={`Volume: ${rec.volumeName} | Impact: ${rec.impact}`}
+                        type={rec.priority === 'high' ? 'error' : rec.priority === 'medium' ? 'warning' : 'info'}
+                        showIcon
+                        style={{ marginBottom: 8 }}
+                      />
+                    ))}
+                  </Card>
+                )}
+
+                {/* Data Source Info */}
+                <Card size="small">
+                  <div style={{ fontSize: '12px', color: '#666' }}>
+                    <p>Source: {insightsData.summary.source}</p>
+                    <p>Generated: {new Date(insightsData.summary.timestamp).toLocaleString()}</p>
+                    {insightsData.summary.isFallback && (
+                      <Alert
+                        message="Using mock data"
+                        description="The insights service is unavailable. Displaying sample data for demonstration."
+                        type="warning"
+                        showIcon
+                        style={{ marginTop: 8 }}
+                      />
+                    )}
+                  </div>
+                </Card>
+              </>
+            ) : (
+              <Alert
+                message="No insights available"
+                description="Unable to generate insights for the selected volumes. Please try again later."
+                type="warning"
+                showIcon
+              />
+            )}
+          </div>
+        )}
+      </Modal>
     </AppLayout>
   );
 }

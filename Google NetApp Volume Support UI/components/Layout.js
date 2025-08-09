@@ -17,7 +17,8 @@ import {
   ReloadOutlined,
   LoadingOutlined,
   SecurityScanOutlined,
-  FileProtectOutlined
+  FileProtectOutlined,
+  ClockCircleOutlined
 } from '@ant-design/icons';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -338,6 +339,9 @@ const AppLayout = ({ children }) => {
       case '5-3':
         router.push('/policies/backup');
         break;
+      case '6':
+        router.push('/task-monitor');
+        break;
       default:
         break;
     }
@@ -512,6 +516,11 @@ const AppLayout = ({ children }) => {
           label: 'Backup Policies',
         },
       ],
+    },
+    {
+      key: '6',
+      icon: <ClockCircleOutlined />,
+      label: 'Task Monitor',
     },
   ];
 

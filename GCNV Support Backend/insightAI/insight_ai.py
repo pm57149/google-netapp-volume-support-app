@@ -64,7 +64,7 @@ def find_insight(metrics_data_path):
         "Don't suggest any feature changes or upgrades. "
         "Don't suggest any software changes or upgrades."
         "Don't use Best regards and similar phrases. Keep the response professional and focused on the customer's needs."
-        "Don't use backups instead of snapshots. "
+        "Don't use data protection word for snapshots. "
         "Use the volume & pool name wherever possible to support your analysis, but do not include the raw data in the response."
     )
 
