@@ -21,7 +21,7 @@ def run_ontap_command(ssh, command):
 def process_volume(volume, sample_id):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(ONTAP_HOST, username=USERNAME, password=PASSWORD)
+    ssh.connect(ONTAP_HOST, username=USERNAME, password=PASSWORD, banner_timeout=60)
 
     try:
         vol_stats_table_cmd = f"set diagnostic -confirmations off; statistics volume show -volume {volume}"
@@ -57,7 +57,7 @@ def process_volume(volume, sample_id):
 def fetch_metrics_data(volumes):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(ONTAP_HOST, username=USERNAME, password=PASSWORD)
+    ssh.connect(ONTAP_HOST, username=USERNAME, password=PASSWORD, banner_timeout=60)
 
     pool_qos_show_cmd = "qos policy-group show -vserver *-gcnv -fields throughput-policy"
     qos_output = run_ontap_command(ssh, pool_qos_show_cmd)
@@ -81,7 +81,7 @@ def fetch_metrics_data(volumes):
             for volume in volumes:
                 ssh = paramiko.SSHClient()
                 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                ssh.connect(ONTAP_HOST, username=USERNAME, password=PASSWORD)
+                ssh.connect(ONTAP_HOST, username=USERNAME, password=PASSWORD, banner_timeout=60)
 
                 show_cmd = f"set diagnostic -confirmations off; statistics start -object volume -instance {volume}"
                 output = run_ontap_command(ssh, show_cmd)
