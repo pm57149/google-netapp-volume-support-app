@@ -29,48 +29,54 @@ python insight_server.py
 
 ## Usage
 
+## API Endpoints
+
 ### 1. Requesting Insights
-Send a POST request to the server endpoint `/find_insight` with a JSON body containing the volume names:
+Send a POST request to `/find_insight` with a JSON body containing the volume names:
 
 ```
 curl -X POST http://localhost:5000/find_insight -H "Content-Type: application/json" -d '{"volNames": ["vol1", "vol2", "vol3"]}'
 ```
-
-#### Example Response
+Response:
 ```
 {
-  "request_id": "b1e2c3d4-5678-90ab-cdef-1234567890ab"
+  "request_id": "<uuid>"
 }
 ```
 
-- The server will process the request and return a request ID.
-
-### 2. Polling for Response
-Poll the response using the request ID:
+### 2. Requesting Metrics Data
+Send a POST request to `/get_metrics_data` with a JSON body containing the volume names:
 
 ```
-curl -X GET http://localhost:5000/poll_response/<request_id>
+curl -X POST http://localhost:5000/get_metrics_data -H "Content-Type: application/json" -d '{"volNames": ["vol1", "vol2", "vol3"]}'
+```
+Response:
+```
+{
+  "request_id": "<uuid>"
+}
 ```
 
-- Replace `<request_id>` with the actual request ID returned.
-- The endpoint will return the insight or the current status.
+### 3. Polling for Any Response
+Poll the response for any request (insight or metrics) using the common endpoint:
 
-#### Example Response (processing)
+```
+curl -X GET http://localhost:5000/poll/<request_id>
+```
+Response (processing):
 ```
 {
   "status": "processing"
 }
 ```
-
-#### Example Response (completed)
+Response (completed):
 ```
 {
   "status": "completed",
-  "response": "<customer-friendly insight>"
+  "response": <result>
 }
 ```
-
-#### Example Response (error)
+Response (error):
 ```
 {
   "status": "error",
@@ -78,7 +84,9 @@ curl -X GET http://localhost:5000/poll_response/<request_id>
 }
 ```
 
-## Notes
+### Notes
+- All request tracking is now handled in-memory using TinyDB.
+- See `insight_server.py` for implementation details.
 - Ensure your ONTAP system is reachable from the host running this project.
 - The PEM certificate is required for secure OpenAI API access.
 

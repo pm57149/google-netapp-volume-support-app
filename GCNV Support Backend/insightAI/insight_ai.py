@@ -73,12 +73,52 @@ def find_insight(metrics_data_path):
         "The response should only contain the JSON object without any additional text or newlines. Don't use escape characters."
     )
 
-    customer_friendly_response = json.loads(customer_friendly_response)
-
     # print("Customer-friendly response:\n", customer_friendly_response)
 
-    return customer_friendly_response
+    return json.loads(customer_friendly_response)
+
+vol_metrics_json_array = [
+    {
+        "volumeName": "",
+        "total_ops": 0,
+        "read_ops": 0,
+        "write_ops": 0,
+        "other_ops": 0,
+        "read_bps": 0,
+        "write_bps": 0,
+        "latency_us": 0,
+        "access_latency_us": 0,
+        "avg_latency_us": 0,
+        "other_latency_us": 0,
+        "read_blocks": 0,
+        "read_data_gb": 0,
+        "read_latency_us": 0,
+        "write_blocks": 0,
+        "write_data_gb": 0,
+        "write_latency_us": 0
+    }
+]
+
+def get_json_metrics_data(metrics_data_path, volumes):
+    """
+    Reads the metrics data from the specified file and returns it as a JSON object.
+    """
+    with open(metrics_data_path, "r") as f:
+        data = f.read()
+
+    metrics_json = agentic_decision(
+        "You are a ontap metric extractor bot."
+        f"Analyze the following data {data}"
+        f"Extract metrics for volumes: {volumes}. "
+        f"transform the response into a JSON format: {vol_metrics_json_array}."
+        "The response should only contain the JSON object without any additional text or newlines. Don't use escape characters."
+    )
+
+    # print("Metrics Response:\n", metrics_json)
+
+    return json.loads(metrics_json)
 
 
 if __name__ == "__main__":
-    find_insight("/Users/ac84652/netapp/hackathon/insightAI/metrics_data/stats_output.txt")
+    find_insight("path/to/insightAI/metrics_data/stats_output.txt")
+    get_json_metrics_data("path/to/insightAI/metrics_data/stats_output.txt", ["vol1", "vol2"])
