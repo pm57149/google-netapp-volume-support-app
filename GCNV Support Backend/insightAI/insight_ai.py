@@ -67,11 +67,7 @@ def find_insight(metrics_data_path):
         "Don't suggest any feature changes or upgrades. "
         "Don't suggest any software changes or upgrades."
         "Don't use Best regards and similar phrases. Keep the response professional and focused on the customer's needs."
-<<<<<<< HEAD
-        "Don't use data protection word for snapshots. "
-=======
         "Don't use backups or data protection terms for snapshots. "
->>>>>>> 8d9b0430f4ea4ae540d49c27262550a94c6f7637
         "Use the volume & pool name wherever possible to support your analysis, but do not include the raw data in the response."
         f"transform the response into a JSON format with keys: {', '.join(resp_json.keys())}."
         "The response should only contain the JSON object without any additional text or newlines. Don't use escape characters."
