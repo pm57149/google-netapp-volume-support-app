@@ -44,6 +44,7 @@ def agentic_decision(prompt):
         traceback.print_exc()
         return None
 
+
 def find_insight(metrics_data_path):
     data = ""
     with open(metrics_data_path, "r") as f:
