@@ -57,11 +57,38 @@ Response:
 }
 ```
 
-### 3. Polling for Any Response
-Poll the response for any request (insight or metrics) using the common endpoint:
+### 3. Polling Insight Response
+Poll the response for an insight request using:
 
 ```
-curl -X GET http://localhost:5000/poll/<request_id>
+curl -X GET http://localhost:5000/poll_insight/<request_id>
+```
+Response (processing):
+```
+{
+  "status": "processing"
+}
+```
+Response (completed):
+```
+{
+  "status": "completed",
+  "response": <result>
+}
+```
+Response (error):
+```
+{
+  "status": "error",
+  "message": "<error message>"
+}
+```
+
+### 4. Polling Metrics Response
+Poll the response for a metrics request using:
+
+```
+curl -X GET http://localhost:5000/poll_metrics/<request_id>
 ```
 Response (processing):
 ```

@@ -81,10 +81,27 @@ def get_json_metrics_data_endpoint():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Common poll endpoint:
-# curl -X GET http://localhost:5000/poll/<request_id>
-@app.route('/poll/<request_id>', methods=['GET'])
-def poll_response_common(request_id):
+# Poll insight response:
+# curl -X GET http://localhost:5000/poll_insight/<request_id>
+@app.route('/poll_insight/<request_id>', methods=['GET'])
+def poll_insight_response(request_id):
+    try:
+        request_data = get_request(request_id)
+        if request_data is None:
+            return jsonify({"error": "Invalid request ID"}), 404
+        status = request_data["status"]
+        if status == "processing":
+            return jsonify({"status": "processing"}), 202
+        if status == "error":
+            return jsonify({"status": "error", "message": request_data["response"]}), 500
+        return jsonify(request_data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Poll metrics response:
+# curl -X GET http://localhost:5000/poll_metrics/<request_id>
+@app.route('/poll_metrics/<request_id>', methods=['GET'])
+def poll_metrics_response(request_id):
     try:
         request_data = get_request(request_id)
         if request_data is None:
