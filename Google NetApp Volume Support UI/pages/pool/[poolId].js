@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
-import { Card, Row, Col, Statistic, Table, Tag, Button, Spin, Alert, Descriptions, Progress, Tabs, message, Space } from 'antd';
 import { 
-  DatabaseOutlined, 
-  HddOutlined, 
-  CloudServerOutlined, 
+  Card, Row, Col, Statistic, Table, Tag, Button, Spin, Alert, 
+  Descriptions, Progress, Tabs, message, Space, Input, List, Avatar
+} from 'antd';
+import {
+  DatabaseOutlined,
+  HddOutlined,
+  CloudServerOutlined,
   ReloadOutlined,
   EnvironmentOutlined,
   GlobalOutlined,
@@ -17,8 +20,17 @@ import {
   CheckCircleOutlined,
   ThunderboltOutlined,
   BulbOutlined,
-  BarChartOutlined
+  BarChartOutlined,
+  AppstoreOutlined,
+  ExclamationCircleOutlined,
+  LineChartOutlined,
+  AreaChartOutlined,
+  MessageOutlined,
+  SendOutlined,
+  RobotOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
+import { Line } from '@ant-design/plots';
 import AppLayout from '../../components/Layout';
 
 const { TabPane } = Tabs;
@@ -42,6 +54,81 @@ export default function PoolDetails() {
   const [pollInterval, setPollInterval] = useState(null);
   const [insightsRequestId, setInsightsRequestId] = useState(null);
   const [insightsRequestInitiated, setInsightsRequestInitiated] = useState(false);
+
+  // New state for metrics
+  const [metricsData, setMetricsData] = useState([]);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState(null);
+  const [metricsRequestId, setMetricsRequestId] = useState(null);
+  const [metricsInterval, setMetricsInterval] = useState(null);
+  const [lastMetricsUpdate, setLastMetricsUpdate] = useState(null);
+  const [metricsHistory, setMetricsHistory] = useState([]);
+
+  // Chat state
+  const [messages, setMessages] = useState([]);
+  const [messageInput, setMessageInput] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [chatError, setChatError] = useState(null);
+  const messagesEndRef = useRef(null);
+
+  // Function to scroll to bottom of chat
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleSendMessage = async () => {
+    if (!messageInput.trim()) return;
+    
+    try {
+      setIsSending(true);
+      setChatError(null);
+      
+      // Add user message to chat
+      const userMessage = { role: 'user', content: messageInput };
+      setMessages(prev => [...prev, userMessage]);
+      setMessageInput('');
+
+      // Send message to MCP server
+      const response = await fetch('/api/chat/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: messageInput,
+          context: {
+            poolId,
+            metrics: metricsHistory,
+            // Add any other relevant context
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get response from assistant');
+      }
+
+      const data = await response.json();
+      
+      // Add assistant's response to chat
+      const assistantMessage = { role: 'assistant', content: data.response };
+      setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error('Chat error:', error);
+      setChatError('Failed to get response from NetApp Assistant. Please try again.');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
 
   // Fetch volumes for the pool
   const fetchVolumes = async (poolId) => {
@@ -220,43 +307,53 @@ export default function PoolDetails() {
 
   // Start polling for insight results
   const startPolling = (taskId) => {
+    if (!taskId) {
+      console.error('No task ID provided for polling');
+      return;
+    }
+
+    console.log('Starting polling with taskId:', taskId);
+    setInsightsLoading(true);
+    setInsightsError(null);
+    setPollStatus('processing');
+
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/poll-response/${taskId}`);
+        console.log('Polling for insights with ID:', taskId);
+        const response = await fetch(`/api/poll-insight/${taskId}`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const data = await response.json();
+        console.log('Poll response received:', data);
         
-        console.log('Poll response:', data);
-        
-        // Handle the new response format
-        if (data.data?.status === 'completed' && data.data?.response) {
-          // Process the completed response with the new format
+        if (data.status === 'completed' && data.response) {
+          console.log('Polling completed, received response:', data.response);
           setInsightsData({
-            response: data.data.response,
+            response: data.response,
             status: 'completed',
             timestamp: new Date().toISOString(),
-            volumes: ["vol1", "vol2", "vol3"],
-            result: data.data.result || { volumesAnalyzed: 3 }
+            volumes: ["volume1", "volume11"]
           });
           setPollStatus('completed');
           clearInterval(interval);
           setPollInterval(null);
           setInsightsLoading(false);
-        } else if (data.data?.status === 'processing') {
-          // Still processing
+        } else if (data.status === 'processing') {
+          console.log('Still processing...');
           setPollStatus('processing');
-        } else if (data.status === 'failed' || data.data?.status === 'failed') {
+        } else if (data.status === 'failed') {
+          console.error('Polling failed:', data);
           setInsightsError('Analysis failed. Please try again.');
           setPollStatus('failed');
           clearInterval(interval);
           setPollInterval(null);
           setInsightsLoading(false);
-        } else {
-          // Handle other status or continue polling
-          setPollStatus(data.data?.status || data.status || 'processing');
         }
       } catch (error) {
         console.error('Polling error:', error);
-        setInsightsError('Failed to get analysis results');
+        setInsightsError('Failed to get analysis results: ' + error.message);
         setPollStatus('failed');
         clearInterval(interval);
         setPollInterval(null);
@@ -276,33 +373,15 @@ export default function PoolDetails() {
     };
   }, [pollInterval]);
 
-  // Handle tab change
-  const handleTabChange = (key) => {
-    setActiveTab(key);
-    if (key === 'insights' && !insightsData && !insightsLoading) {
-      // When switching to insights tab, start polling if we have a request ID
-      if (insightsRequestId) {
-        fetchPoolInsights(poolId, volumes);
-      } else if (!insightsRequestInitiated) {
-        // If no request initiated yet, start it
-        initiateInsightsRequest(poolId);
-      }
-    }
-  };
-
-  // Initiate insights request when pool is loaded
-  const initiateInsightsRequest = async (poolId) => {
-    if (insightsRequestInitiated) return; // Prevent duplicate requests
-    
+  // Initiate metrics request
+  const initiateMetricsRequest = async () => {
     try {
-      console.log('Initiating insights request for pool:', poolId);
-      setInsightsRequestInitiated(true);
-      
-      // For now, use fixed volume names for testing
-      const volumeNames = ["vol1", "vol2", "vol3"];
-      
-      // Call insights API to start the analysis
-      const response = await fetch('/api/find-insights', {
+      setMetricsLoading(true);
+      setMetricsError(null);
+
+      // Use actual volume names from the request
+      const volumeNames = ["volume1", "volume11"];
+      const response = await fetch('/api/get-metrics', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -315,38 +394,353 @@ export default function PoolDetails() {
       }
 
       const result = await response.json();
-      
-      // Store the request ID for later polling
-      if (result.taskId) {
-        setInsightsRequestId(result.taskId);
-        console.log('Insights request initiated with ID:', result.taskId);
-      } else {
-        console.log('No task ID received, insights may be completed immediately');
-        // Handle immediate response if no polling is needed
-        if (result.insights) {
-          setInsightsData({
-            response: "Analysis completed successfully.",
-            status: 'completed',
-            timestamp: new Date().toISOString(),
-            volumes: volumeNames,
-            result: { volumesAnalyzed: 3, isFallback: true }
+      if (!result.request_id) {
+        throw new Error('No request_id received in response');
+      }
+
+      setMetricsRequestId(result.request_id);
+      await pollMetricsData(result.request_id);
+    } catch (error) {
+      console.error('Error initiating metrics request:', error);
+      setMetricsError('Failed to start metrics collection: ' + error.message);
+      setMetricsLoading(false);
+    }
+  };
+
+  // Transform metrics data for visualization
+  const transformMetricsData = (volume, timestamp) => {
+    const metrics = [
+      // Latency metrics
+      { metricType: 'avg_latency_us', value: volume.avg_latency_us },
+      { metricType: 'access_latency_us', value: volume.access_latency_us },
+      { metricType: 'read_latency_us', value: volume.read_latency_us },
+      { metricType: 'other_latency_us', value: volume.other_latency_us },
+      { metricType: 'latency_us', value: volume.latency_us },
+      // Operations metrics
+      { metricType: 'total_ops', value: volume.total_ops },
+      { metricType: 'read_ops', value: volume.read_ops },
+      { metricType: 'other_ops', value: volume.other_ops },
+      // Read performance metrics
+      { metricType: 'read_bps', value: volume.read_bps },
+      { metricType: 'read_blocks', value: volume.read_blocks },
+      { metricType: 'read_data_gb', value: volume.read_data_gb }
+    ];
+
+    return metrics.map(metric => ({
+      timestamp,
+      metricType: metric.metricType,
+      value: metric.value || 0,
+      volumeName: volume.volumeName,
+      type: volume.volumeName
+    }));
+  };
+
+  // Polling for metrics data
+  const pollMetricsData = async (requestId) => {
+    if (!requestId) return;
+
+    try {
+      let completed = false;
+      while (!completed) {
+        const response = await fetch(`/api/poll-metrics/${requestId}`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.status === 'completed' && data.response) {
+          const timestamp = new Date().toLocaleTimeString();
+          
+          // Transform and update metrics history
+          setMetricsHistory(prevHistory => {
+            const newData = data.response.flatMap(volume => 
+              transformMetricsData(volume, timestamp)
+            );
+
+            const combinedData = [...prevHistory, ...newData];
+            
+            // Keep only last 10 minutes of data
+            const latestTimestamps = Array.from(new Set(combinedData.map(item => item.timestamp)))
+              .sort()
+              .slice(-10);
+            
+            return combinedData.filter(item => latestTimestamps.includes(item.timestamp));
           });
+
+          setMetricsData(data.response);
+          setLastMetricsUpdate(new Date());
+          completed = true;
+        } else if (data.status === 'failed') {
+          throw new Error('Metrics polling failed');
+        } else {
+          // Wait for 2 seconds before polling again
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
+      setMetricsLoading(false);
+    } catch (error) {
+      console.error('Error polling metrics:', error);
+      setMetricsError('Failed to get metrics: ' + error.message);
+      setMetricsLoading(false);
+    }
+  };
+
+  // Sequential metrics collection with fixed interval
+  const startSequentialMetricsCollection = async () => {
+    if (metricsInterval) {
+      clearInterval(metricsInterval);
+      setMetricsInterval(null);
+    }
+
+    const collectMetrics = async () => {
+      try {
+        setMetricsLoading(true);
+        setMetricsError(null);
+
+        // Start new metrics request
+        const volumeNames = ["volume1", "volume11"];
+        const response = await fetch('/api/get-metrics', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ volNames: volumeNames }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (!result.request_id) {
+          throw new Error('No request_id received in response');
+        }
+
+        // Wait for the complete response from poll-metrics
+        await pollMetricsData(result.request_id);
+
+        // Schedule the next collection after current one is complete
+        const timer = setTimeout(() => {
+          if (activeTab === 'metrics') {
+            collectMetrics();
+          }
+        }, 60000); // Wait 60 seconds before next collection
+
+        setMetricsInterval(timer);
+      } catch (error) {
+        console.error('Error in metrics collection:', error);
+        setMetricsError('Failed to collect metrics: ' + error.message);
+        setMetricsLoading(false);
+
+        // Retry after error
+        const timer = setTimeout(() => {
+          if (activeTab === 'metrics') {
+            collectMetrics();
+          }
+        }, 60000);
+        setMetricsInterval(timer);
+      }
+    };
+
+    // Start the first collection
+    await collectMetrics();
+  };
+
+  // Handle tab change
+  const handleTabChange = (key) => {
+    setActiveTab(key);
+    if (key === 'insights') {
+      // When switching to insights tab, always start a new request
+      setInsightsRequestInitiated(false);
+      setInsightsRequestId(null);
+      setInsightsData(null);
+      setInsightsError(null);
+      setPollStatus(null);
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        setPollInterval(null);
+      }
+      initiateInsightsRequest(poolId);
+    } else if (key === 'metrics') {
+      // Reset metrics state when switching to the tab
+      setMetricsHistory([]);
+      setMetricsData([]);
+      setMetricsError(null);
+      
+      // Start sequential metrics collection
+      startSequentialMetricsCollection();
+    }
+  };
+
+  // Effect to handle metrics polling
+  useEffect(() => {
+    if (activeTab === 'metrics') {
+      // Start initial metrics collection
+      initiateMetricsRequest();
+
+      // Set up polling interval (every minute)
+      const interval = setInterval(() => {
+        initiateMetricsRequest();
+      }, 60000); // 1 minute
+
+      // Cleanup function
+      return () => {
+        clearInterval(interval);
+        setMetricsHistory([]);
+        setMetricsData(null);
+        setMetricsRequestId(null);
+        setMetricsError(null);
+        setMetricsLoading(false);
+      };
+    }
+  }, [activeTab]);
+
+  // Initiate insights request when pool is loaded
+  const initiateInsightsRequest = async (poolId) => {
+    if (insightsRequestInitiated) {
+      console.log('Insights request already initiated, skipping...');
+      return;
+    }
+    
+    try {
+      console.log('Initiating insights request for pool:', poolId);
+      setInsightsRequestInitiated(true);
+      setInsightsLoading(true);
+      
+      // Use hardcoded volume names for testing
+      const volumeNames = ["volume1", "volume11"];
+      console.log('Requesting insights for volumes:', volumeNames);
+      
+      // Call find-insight through Next.js API route
+      const response = await fetch('/api/find-insight', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ volNames: volumeNames }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('Find insight response:', result);
+      
+      if (!result.request_id) {
+        throw new Error('No request_id received in response');
+      }
+
+      console.log('Setting request ID:', result.request_id);
+      setInsightsRequestId(result.request_id);
+      
+      // Start polling immediately
+      console.log('Starting polling with request ID:', result.request_id);
+      startPolling(result.request_id);
       
     } catch (error) {
       console.error('Error initiating insights request:', error);
-      // Don't show error to user yet, they haven't clicked insights tab
+      setInsightsError('Failed to start analysis: ' + error.message);
+      setInsightsRequestInitiated(false);
+      setInsightsLoading(false);
     }
   };
+
+  // Fetch metrics data
+  const fetchMetricsData = async (poolId) => {
+    if (!poolId) return;
+
+    try {
+      setMetricsLoading(true);
+      setMetricsError(null);
+      
+      // For demonstration, using a static response format
+      const response = await fetch(`/api/metrics?poolId=${encodeURIComponent(poolId)}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const metricsResponse = await response.json();
+      console.log('Metrics API response:', metricsResponse);
+      
+      // Transform response to match chart.js format
+      const labels = metricsResponse.data.map(item => item.timestamp);
+      const usageData = metricsResponse.data.map(item => item.usage);
+      const limitData = metricsResponse.data.map(item => item.limit);
+
+      setMetricsHistory({
+        labels,
+        datasets: [
+          {
+            label: 'Usage',
+            data: usageData,
+            borderColor: '#34a853',
+            backgroundColor: 'rgba(52, 168, 83, 0.2)',
+            fill: true,
+          },
+          {
+            label: 'Limit',
+            data: limitData,
+            borderColor: '#fbbc04',
+            backgroundColor: 'rgba(251, 188, 4, 0.2)',
+            fill: true,
+          }
+        ]
+      });
+      
+      setLastMetricsUpdate(new Date().toISOString());
+      
+    } catch (err) {
+      console.error('Error fetching metrics data:', err);
+      setMetricsError(err.message);
+      setMetricsHistory({ labels: [], datasets: [] }); // Reset on error
+    } finally {
+      setMetricsLoading(false);
+    }
+  };
+
+  // Polling for metrics data
+  const startMetricsPolling = (poolId) => {
+    if (!poolId) return;
+
+    console.log('Starting metrics polling for poolId:', poolId);
+    setMetricsLoading(true);
+    setMetricsError(null);
+
+    const interval = setInterval(async () => {
+      try {
+        console.log('Polling metrics data...');
+        await fetchMetricsData(poolId);
+      } catch (error) {
+        console.error('Error during metrics polling:', error);
+        setMetricsError('Failed to fetch metrics data: ' + error.message);
+      }
+    }, 60000); // Poll every 60 seconds
+
+    setMetricsInterval(interval);
+  };
+
+  // Cleanup metrics polling on unmount or tab change
+  useEffect(() => {
+    return () => {
+      if (metricsInterval) {
+        clearTimeout(metricsInterval);
+        setMetricsInterval(null);
+      }
+      setMetricsHistory([]);
+      setMetricsData([]);
+      setMetricsError(null);
+      setMetricsLoading(false);
+    };
+  }, [metricsInterval]);
 
   // Initial data loading effect
   useEffect(() => {
     if (poolId) {
       fetchPoolDetails(poolId);
       fetchVolumes(poolId);
-      // Initiate insights request when pool is first loaded
-      initiateInsightsRequest(poolId);
+      // Don't initiate insights request automatically
+      // It will be initiated when user clicks the insights tab
     }
   }, [poolId]);
 
@@ -422,6 +816,399 @@ export default function PoolDetails() {
       render: (description) => description || 'No description',
     },
   ];
+
+  const renderInsightsContent = () => {
+    if (insightsLoading || pollStatus === 'processing') {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
+          <Spin size="large" />
+          <p style={{ marginTop: '16px', fontSize: '16px', color: '#666' }}>
+            {pollStatus === 'processing' ? 'Analyzing volumes...' : 'Starting analysis...'}
+          </p>
+          <p style={{ fontSize: '14px', color: '#999' }}>
+            Analyzing volumes: {insightsData?.volumes?.join(', ') || 'vol1, vol2, vol3'}
+          </p>
+          {pollStatus === 'processing' && (
+            <Tag color="blue" style={{ marginTop: '8px' }}>
+              Status: {pollStatus}
+            </Tag>
+          )}
+        </div>
+      );
+    }
+
+    if (insightsError) {
+      return (
+        <Alert
+          message="Error Loading Insights"
+          description={insightsError}
+          type="error"
+          showIcon
+          action={
+            <Button 
+              size="small" 
+              onClick={() => fetchPoolInsights(poolId, volumes)}
+            >
+              Retry
+            </Button>
+          }
+        />
+      );
+    }
+
+    if (!insightsData?.response) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
+          <Spin size="large" />
+          <p style={{ marginTop: '16px', fontSize: '16px', color: '#666' }}>
+            Initializing volume analysis...
+          </p>
+        </div>
+      );
+    }
+
+    // Handle both legacy and new structured response formats
+    const response = typeof insightsData.response === 'string' 
+      ? { message: insightsData.response }
+      : insightsData.response;
+
+    return (
+      <>
+        {/* Analysis Header */}
+        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+          <Col span={8}>
+            <Card>
+              <Statistic
+                title="Volumes Analyzed"
+                value={insightsData.volumes?.length || response.volumesAnalyzed || 3}
+                prefix={<DatabaseOutlined />}
+              />
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card>
+              <Statistic
+                title="Analysis Status"
+                value="Complete"
+                valueStyle={{ color: '#52c41a' }}
+                prefix={<CheckCircleOutlined />}
+              />
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card>
+              <Statistic
+                title="Generated"
+                value={new Date(insightsData.timestamp).toLocaleTimeString()}
+                prefix={<ClusterOutlined />}
+              />
+            </Card>
+          </Col>
+        </Row>
+
+        {/* Bottlenecks Section */}
+        {response.bottlenecks && (
+          <Card 
+            title={
+              <Space>
+                <ExclamationCircleOutlined style={{ color: '#52c41a' }} />
+                System Health
+              </Space>
+            }
+            style={{ marginBottom: 16 }}
+          >
+            <Alert
+              message="System Status"
+              description={response.bottlenecks}
+              type="success"
+              showIcon
+              style={{ marginBottom: 8 }}
+            />
+          </Card>
+        )}
+
+        {/* Performance Section */}
+        {response.performance && (
+          <Card 
+            title={
+              <Space>
+                <LineChartOutlined style={{ color: '#1890ff' }} />
+                Performance Analysis
+              </Space>
+            }
+            style={{ marginBottom: 16 }}
+            className="performance-card"
+          >
+            <Alert
+              message="Current Activity Status"
+              description={
+                <div style={{ whiteSpace: 'pre-wrap' }}>
+                  {response.performance}
+                </div>
+              }
+              type="info"
+              showIcon
+              icon={<ThunderboltOutlined />}
+            />
+          </Card>
+        )}
+
+        {/* Recommendations Section */}
+        {response.recommendations && (
+          <Card 
+            title={
+              <Space>
+                <BulbOutlined style={{ color: '#52c41a' }} />
+                Action Items & Recommendations
+              </Space>
+            }
+            style={{ marginBottom: 16 }}
+          >
+            {Array.isArray(response.recommendations) ? (
+              <Row gutter={[16, 16]}>
+                {response.recommendations.map((recommendation, index) => (
+                  <Col span={24} key={index}>
+                    <Alert
+                      message={`Recommendation #${index + 1}`}
+                      description={recommendation}
+                      type="info"
+                      showIcon
+                      icon={<BulbOutlined style={{ color: '#1890ff' }} />}
+                      style={{ 
+                        marginBottom: 8,
+                        backgroundColor: '#f6ffed',
+                        border: '1px solid #b7eb8f'
+                      }}
+                    />
+                  </Col>
+                ))}
+              </Row>
+            ) : (
+              <Alert
+                message="Recommendations"
+                description={response.recommendations}
+                type="info"
+                showIcon
+                icon={<BulbOutlined style={{ color: '#1890ff' }} />}
+                style={{ 
+                  backgroundColor: '#f6ffed',
+                  border: '1px solid #b7eb8f'
+                }}
+              />
+            )}
+          </Card>
+        )}
+
+        {/* Usage Trends Section */}
+        {response.usage_trends && (
+          <Card 
+            title={
+              <Space>
+                <AreaChartOutlined style={{ color: '#722ed1' }} />
+                Current Usage Analysis
+              </Space>
+            }
+            style={{ marginBottom: 16 }}
+          >
+            <Alert
+              message="Usage Pattern Summary"
+              description={
+                <div style={{ 
+                  padding: '16px',
+                  backgroundColor: '#f9f0ff',
+                  borderRadius: '4px',
+                  marginTop: '8px'
+                }}>
+                  <div style={{ fontSize: '14px', lineHeight: '1.6', color: '#262626' }}>
+                    {response.usage_trends}
+                  </div>
+                </div>
+              }
+              type="info"
+              showIcon
+              icon={<AreaChartOutlined style={{ color: '#722ed1' }} />}
+              style={{ 
+                border: '1px solid #d3adf7',
+                backgroundColor: '#f9f0ff'
+              }}
+            />
+          </Card>
+        )}
+
+        {/* Legacy Message Display */}
+        {typeof response === 'string' && (
+          <Card style={{ marginBottom: 16 }}>
+            <div style={{ whiteSpace: 'pre-line' }}>
+              {response}
+            </div>
+          </Card>
+        )}
+
+        {/* Data Source Info */}
+        <Card size="small">
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            <p>Analysis completed: {new Date(insightsData.timestamp).toLocaleString()}</p>
+            <p>Volumes analyzed: {insightsData.volumes?.join(', ') || 'vol1, vol2, vol3'}</p>
+          </div>
+        </Card>
+      </>
+    );
+  };
+
+  const getBaseChartConfig = (title, yAxisLabel) => ({
+    padding: 'auto',
+    xField: 'timestamp',
+    yField: 'value',
+    seriesField: 'type',
+    xAxis: {
+      title: { text: 'Time' },
+    },
+    yAxis: {
+      title: { text: yAxisLabel },
+      min: 0,
+    },
+    tooltip: {
+      shared: true,
+      showCrosshairs: true,
+    },
+    animation: {
+      appear: {
+        animation: 'wave-in',
+        duration: 500,
+      },
+    },
+    smooth: true,
+    legend: { position: 'top' }
+  });
+
+  const renderMetricsContent = () => {
+    if (metricsLoading && !metricsData.length) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
+          <Spin size="large" />
+          <p style={{ marginTop: '16px', fontSize: '16px', color: '#666' }}>Loading metrics data...</p>
+        </div>
+      );
+    }
+
+    if (metricsError) {
+      return (
+        <Alert
+          message="Error Loading Metrics"
+          description={metricsError}
+          type="error"
+          showIcon
+          action={<Button size="small" onClick={initiateMetricsRequest}>Retry</Button>}
+        />
+      );
+    }
+
+    const renderChart = (title, metricKey, yAxisLabel, span = 24) => (
+      <Col span={span}>
+        <Card title={title} style={{ marginBottom: 16 }}>
+          <div style={{ height: '300px' }}>
+            <Line
+              {...getBaseChartConfig(title, yAxisLabel)}
+              data={metricsHistory.filter(item => item.metricType === metricKey)}
+            />
+          </div>
+        </Card>
+      </Col>
+    );
+
+    return (
+      <>
+        <Tabs defaultActiveKey="latency">
+          <TabPane tab="Latency Metrics" key="latency">
+            <Row gutter={[16, 16]}>
+              {renderChart('Average Latency', 'avg_latency_us', 'Microseconds (μs)')}
+              {renderChart('Access Latency', 'access_latency_us', 'Microseconds (μs)', 12)}
+              {renderChart('Read Latency', 'read_latency_us', 'Microseconds (μs)', 12)}
+              {renderChart('Other Latency', 'other_latency_us', 'Microseconds (μs)', 12)}
+              {renderChart('General Latency', 'latency_us', 'Microseconds (μs)', 12)}
+            </Row>
+          </TabPane>
+
+          <TabPane tab="Operations" key="operations">
+            <Row gutter={[16, 16]}>
+              {renderChart('Total Operations', 'total_ops', 'Operations/sec')}
+              {renderChart('Read Operations', 'read_ops', 'Operations/sec', 12)}
+              {renderChart('Other Operations', 'other_ops', 'Operations/sec', 12)}
+            </Row>
+          </TabPane>
+
+          <TabPane tab="Read Performance" key="read">
+            <Row gutter={[16, 16]}>
+              {renderChart('Read Throughput', 'read_bps', 'Bytes/sec')}
+              {renderChart('Read Blocks', 'read_blocks', 'Blocks', 12)}
+              {renderChart('Read Data', 'read_data_gb', 'Gigabytes', 12)}
+            </Row>
+          </TabPane>
+        </Tabs>
+
+        {lastMetricsUpdate && (
+          <div style={{ textAlign: 'right', color: '#666', fontSize: '12px', marginTop: 8 }}>
+            Last updated: {lastMetricsUpdate.toLocaleString()}
+          </div>
+        )}
+      </>
+    );
+  };
+
+  // Handle sending message to NetApp Assistant
+  const handleSendMessage = async () => {
+    if (!messageInput.trim()) return;
+
+    try {
+      setIsSending(true);
+      
+      // Add user message to chat
+      const userMessage = {
+        type: 'user',
+        content: messageInput,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, userMessage]);
+      setMessageInput('');
+
+      // Send request to MCP server
+      const response = await fetch('/api/chat/ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          message: messageInput,
+          poolId: poolId,
+          context: {
+            pool: poolData,
+            volumes: volumes,
+            metrics: metricsData,
+          }
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get response from NetApp Assistant');
+      }
+
+      const data = await response.json();
+      
+      // Add assistant's response to chat
+      const assistantMessage = {
+        type: 'assistant',
+        content: data.response,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+
+    } catch (error) {
+      console.error('Error in chat:', error);
+      message.error('Failed to get response from NetApp Assistant');
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -856,144 +1643,94 @@ export default function PoolDetails() {
           } 
           key="insights"
         >
-          {insightsLoading || pollStatus === 'processing' ? (
-            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
-              <Spin size="large" />
-              <p style={{ marginTop: '16px', fontSize: '16px', color: '#666' }}>
-                {pollStatus === 'processing' ? 'Analyzing volumes...' : 'Starting analysis...'}
-              </p>
-              <p style={{ fontSize: '14px', color: '#999' }}>
-                Analyzing volumes: vol1, vol2, vol3
-              </p>
-              {pollStatus === 'processing' && (
-                <Tag color="blue" style={{ marginTop: '8px' }}>
-                  Status: {pollStatus}
-                </Tag>
-              )}
-            </div>
-          ) : insightsError ? (
-            <Alert
-              message="Error Loading Insights"
-              description={insightsError}
-              type="error"
-              showIcon
-              action={
-                <Button 
-                  size="small" 
-                  onClick={() => fetchPoolInsights(poolId, volumes)}
-                >
-                  Retry
-                </Button>
-              }
-            />
-          ) : insightsData?.response ? (
-            <>
-              {/* Analysis Results */}
-              <Card 
-                title={
-                  <Space>
-                    <BulbOutlined style={{ color: '#52c41a' }} />
-                    Volume Analysis Results
-                    <Tag color="green">Completed</Tag>
-                  </Space>
-                }
-                style={{ marginBottom: 16 }}
-              >
-                <div style={{ 
-                  fontSize: '14px', 
-                  lineHeight: '1.6',
-                  whiteSpace: 'pre-line',
-                  color: '#3c4043'
-                }}>
-                  {insightsData.response}
-                </div>
-              </Card>
+          {renderInsightsContent()}
+        </TabPane>
 
-              {/* Analysis Summary */}
-              <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                <Col span={8}>
-                  <Card>
-                    <Statistic
-                      title="Volumes Analyzed"
-                      value={insightsData.volumes?.length || 3}
-                      prefix={<DatabaseOutlined />}
-                    />
-                  </Card>
-                </Col>
-                <Col span={8}>
-                  <Card>
-                    <Statistic
-                      title="Analysis Status"
-                      value="Complete"
-                      valueStyle={{ color: '#52c41a' }}
-                      prefix={<CheckCircleOutlined />}
-                    />
-                  </Card>
-                </Col>
-                <Col span={8}>
-                  <Card>
-                    <Statistic
-                      title="Generated"
-                      value={new Date(insightsData.timestamp).toLocaleTimeString()}
-                      prefix={<ClusterOutlined />}
-                    />
-                  </Card>
-                </Col>
-              </Row>
-
-              {/* Key Findings */}
-              <Card title="Key Findings" style={{ marginBottom: 16 }}>
-                <Row gutter={16}>
-                  <Col span={12}>
-                    <Alert
-                      message="Volume Activity Status"
-                      description="No activity detected on vol1, vol2, and vol3 during monitoring period"
-                      type="info"
-                      showIcon
-                      style={{ marginBottom: 8 }}
-                    />
-                  </Col>
-                  <Col span={12}>
-                    <Alert
-                      message="Data Protection"
-                      description="Only vol3 has data protection policy enabled"
-                      type="warning"
-                      showIcon
-                      style={{ marginBottom: 8 }}
-                    />
-                  </Col>
-                </Row>
-              </Card>
-
-              {/* Actions */}
-              <Card title="Recommended Actions">
-                <ul style={{ margin: 0, paddingLeft: '20px' }}>
-                  <li>Verify volume connectivity and accessibility</li>
-                  <li>Enable data protection policies for vol1 and vol2</li>
-                  <li>Review volumes for potential cleanup if unused</li>
-                  <li>Monitor for expected activity patterns</li>
-                </ul>
-              </Card>
-
-              {/* Data Source Info */}
-              <Card size="small" style={{ marginTop: 16 }}>
-                <div style={{ fontSize: '12px', color: '#666' }}>
-                  <p>Analysis completed: {new Date(insightsData.timestamp).toLocaleString()}</p>
-                  <p>Volumes analyzed: {insightsData.volumes?.join(', ') || 'vol1, vol2, vol3'}</p>
-                </div>
-              </Card>
-            </>
-          ) : (
-            // Initial state - automatically start analysis
-            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
-              <Spin size="large" />
-              <p style={{ marginTop: '16px', fontSize: '16px', color: '#666' }}>
-                Initializing volume analysis...
-              </p>
-            </div>
-          )}
+        <TabPane
+          tab={
+            <span>
+              <LineChartOutlined />
+              Metrics
+            </span>
+          }
+          key="metrics"
+        >
+          {renderMetricsContent()}
         </TabPane>
       </Tabs>
+
+      {/* Chat with NetApp Assistant */}
+      <Card 
+        title={
+          <Space>
+            <RobotOutlined style={{ color: '#52c41a' }} />
+            NetApp Assistant
+          </Space>
+        }
+        style={{ marginTop: 24 }}
+      >
+        <div style={{ maxHeight: '400px', overflowY: 'auto', marginBottom: 16 }}>
+          <List
+            dataSource={messages}
+            renderItem={item => (
+              <List.Item>
+                <List.Item.Meta
+                  avatar={<Avatar icon={item.type === 'user' ? <UserOutlined /> : <RobotOutlined />} />}
+                  title={item.type === 'user' ? 'You' : 'NetApp Assistant'}
+                  description={
+                    <div style={{ 
+                      padding: '8px',
+                      borderRadius: '4px',
+                      backgroundColor: item.type === 'user' ? '#e6f7ff' : '#f0f0f0',
+                      wordBreak: 'break-word'
+                    }}>
+                      {item.content}
+                    </div>
+                  }
+                />
+              </List.Item>
+            )}
+          />
+          <div ref={messagesEndRef} />
+        </div>
+
+        <Row gutter={[8, 8]}>
+          <Col span={18}>
+            <Input
+              value={messageInput}
+              onChange={e => setMessageInput(e.target.value)}
+              onPressEnter={handleSendMessage}
+              placeholder="Ask a question about your pool..."
+              disabled={isSending}
+              suffix={
+                <Button 
+                  type="primary" 
+                  onClick={handleSendMessage} 
+                  loading={isSending}
+                  icon={<SendOutlined />}
+                >
+                  Send
+                </Button>
+              }
+              style={{ 
+                borderRadius: '4px',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                fontSize: '14px',
+                height: '48px',
+              }}
+            />
+          </Col>
+          <Col span={6}>
+            <Button 
+              type="default" 
+              onClick={() => setMessages([])} 
+              style={{ width: '100%', height: '48px', borderRadius: '4px' }}
+            >
+              Clear Chat
+            </Button>
+          </Col>
+        </Row>
+      </Card>
     </AppLayout>
   );
 }
